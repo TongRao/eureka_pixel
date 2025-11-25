@@ -38,9 +38,9 @@ export default function Home() {
   }, [])
 
   const recentPhotos = [
-    { src: "https://images.unsplash.com/photo-1731432245368-2504b772a159?q=80&w=1200&auto=format&fit=crop", alt: "Mountain View" },
-    { src: "https://images.unsplash.com/photo-1732050343336-39145558d78d?q=80&w=1200&auto=format&fit=crop", alt: "City Lights" },
-    { src: "https://images.unsplash.com/photo-1731965097486-35366d4c0628?q=80&w=1200&auto=format&fit=crop", alt: "Abstract" },
+    { src: "https://images.unsplash.com/photo-1477468572316-36979010099d?q=80&w=1200&auto=format&fit=crop", alt: "Mountain View" },
+    { src: "https://images.unsplash.com/photo-1462258409682-731445253757?q=80&w=1200&auto=format&fit=crop", alt: "City Lights" },
+    { src: "https://images.unsplash.com/photo-1505672678657-cc7037095e60?q=80&w=1200&auto=format&fit=crop", alt: "Abstract" },
   ]
 
   return (
@@ -74,6 +74,7 @@ export default function Home() {
       {/* Projects Preview */}
       <Section
         fullScreen
+        className="pt-20"
         ref={(el) => { sectionsRef.current[1] = el }}
       >
         <div className="flex items-center justify-between mb-10">
@@ -118,19 +119,19 @@ export default function Home() {
             <CollectionCard
               title="Landscapes"
               count={12}
-              coverSrc="https://images.unsplash.com/photo-1731432245368-2504b772a159?q=80&w=400&auto=format&fit=crop"
+              coverSrc="https://images.unsplash.com/photo-1608592077365-c6399182e63c?q=80&w=400&auto=format&fit=crop"
               slug="landscapes"
             />
             <CollectionCard
               title="Urban"
               count={8}
-              coverSrc="https://images.unsplash.com/photo-1732050343336-39145558d78d?q=80&w=400&auto=format&fit=crop"
+              coverSrc="https://images.unsplash.com/photo-1507090960745-b32f65d3113a?q=80&w=400&auto=format&fit=crop"
               slug="urban"
             />
             <CollectionCard
               title="Abstract"
               count={5}
-              coverSrc="https://images.unsplash.com/photo-1731965097486-35366d4c0628?q=80&w=400&auto=format&fit=crop"
+              coverSrc="https://images.unsplash.com/photo-1563089145-599997674d42?q=80&w=400&auto=format&fit=crop"
               slug="abstract"
               className="hidden md:block"
             />
@@ -148,7 +149,7 @@ export default function Home() {
       {/* Blog Preview & Footer */}
       <Section
         fullScreen
-        className="relative"
+        className="relative pt-20"
         ref={(el) => { sectionsRef.current[3] = el }}
       >
         <div className="flex flex-col h-full justify-center">
