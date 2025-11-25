@@ -101,7 +101,7 @@ export default function Home() {
       {/* Photography Preview */}
       <Section
         fullScreen
-        className="pt-24"
+        className="pt-20"
         ref={(el) => { sectionsRef.current[2] = el }}
       >
         <div className="flex flex-col h-full justify-center w-full">
@@ -132,12 +132,14 @@ export default function Home() {
               count={5}
               coverSrc="https://images.unsplash.com/photo-1731965097486-35366d4c0628?q=80&w=400&auto=format&fit=crop"
               slug="abstract"
+              className="hidden md:block"
             />
             <CollectionCard
               title="Portraits"
               count={15}
               coverSrc="https://images.unsplash.com/photo-1542038784456-1ea8e935640e?q=80&w=400&auto=format&fit=crop"
               slug="portraits"
+              className="hidden md:block"
             />
           </div>
         </div>
@@ -168,12 +170,14 @@ export default function Home() {
               excerpt="How I approach composition and lighting in my landscape photography."
               date="Nov 20, 2025"
               slug="art-of-photography"
+              className="hidden md:block"
             />
             <BlogCard
               title="Designing for Dark Mode"
               excerpt="Best practices for creating comfortable and accessible dark mode interfaces."
               date="Nov 15, 2025"
               slug="designing-for-dark-mode"
+              className="hidden md:block"
             />
           </div>
         </div>

@@ -27,8 +27,8 @@ export function DynamicBackground({ pageIndex }: DynamicBackgroundProps) {
 
         // Configuration for different states (Brighter colors but low opacity for subtle effect)
         const configs = [
-            // Hero: Sky Blue, Breathing Grid
-            { r: 56, g: 189, b: 248, opacity: 0.5, scale: 1, speed: 0.5, type: 'grid' },
+            // Hero: Deep Tech Blue, Breathing Grid
+            { r: 37, g: 99, b: 235, opacity: 0.4, scale: 1, speed: 0.5, type: 'grid' },
             // Projects: Purple, Flowing Wave
             { r: 168, g: 85, b: 247, opacity: 0.5, scale: 1.1, speed: 1, type: 'wave' },
             // Photography: Teal, Floating Particles
@@ -88,7 +88,7 @@ export function DynamicBackground({ pageIndex }: DynamicBackgroundProps) {
             ctx.fillStyle = "#0a0a0a"
             ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-            const spacing = 40
+            const spacing = 25
             const rows = Math.ceil(canvas.height / spacing)
             const cols = Math.ceil(canvas.width / spacing)
 
