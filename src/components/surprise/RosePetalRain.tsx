@@ -18,6 +18,9 @@ type Particle = {
     angle: number;
     spin: number;
     affinity: number;
+    layer: number;
+    foamBias: number;
+    phase: number;
     hue: number;
     lightness: number;
     alpha: number;
@@ -26,22 +29,13 @@ type Particle = {
     heartTargetIndex: number;
     targetOffsetX: number;
     targetOffsetY: number;
-    scatterX: number;
-    scatterY: number;
+    releaseVx: number;
+    releaseVy: number;
 };
 
 type Point = {
     x: number;
     y: number;
-};
-
-type Vortex = {
-    x: number;
-    y: number;
-    radius: number;
-    strength: number;
-    phase: number;
-    speed: number;
 };
 
 type Transition = {
@@ -52,23 +46,21 @@ type Transition = {
 } | null;
 
 type FreeMotionState = {
-    centerX: number;
-    centerY: number;
     height: number;
-    mode: number;
-    pointer: {
-        active: boolean;
-        x: number;
-        y: number;
-    };
+    isMobile: boolean;
     time: number;
-    vortices: Vortex[];
     width: number;
 };
 
+type WaveProfile = {
+    crest: number;
+    foam: number;
+    glint: number;
+    lift: number;
+    roll: number;
+};
+
 const TRANSITION_MS = 5000;
-const FREE_MODE_MS = 15000;
-const FREE_MODE_BLEND_MS = 1800;
 
 function random(min: number, max: number) {
     return min + Math.random() * (max - min);
@@ -96,9 +88,17 @@ function getParticleTargetIndex(particle: Particle, stage: ParticleStage) {
     return stage === "heart" ? particle.heartTargetIndex : particle.letterTargetIndex;
 }
 
-function assignScatterTarget(particle: Particle, width: number, height: number) {
-    particle.scatterX = random(width * 0.04, width * 0.96);
-    particle.scatterY = random(height * 0.04, height * 0.96);
+function assignReleaseVelocity(particle: Particle, width: number, height: number) {
+    const dx = particle.x - width * 0.5;
+    const dy = particle.y - height * 0.5;
+    const distance = Math.hypot(dx, dy) || 1;
+    const randomAngle = random(0, Math.PI * 2);
+    const outwardX = dx / distance;
+    const outwardY = dy / distance;
+    const strength = random(0.006, 0.024);
+
+    particle.releaseVx = (outwardX * 0.72 + Math.cos(randomAngle) * 0.28) * strength;
+    particle.releaseVy = (outwardY * 0.72 + Math.sin(randomAngle) * 0.28) * strength;
 }
 
 function resetParticle(
@@ -117,6 +117,9 @@ function resetParticle(
     particle.angle = random(0, Math.PI * 2);
     particle.spin = random(-0.035, 0.035);
     particle.affinity = Math.random() < 0.18 ? random(0.05, 0.35) : random(0.58, 1);
+    particle.layer = random(0.55, 1.45);
+    particle.foamBias = Math.random() < 0.22 ? random(0.72, 1) : random(0.12, 0.62);
+    particle.phase = random(0, Math.PI * 2);
     particle.hue = random(334, 354);
     particle.lightness = random(63, 84);
     particle.alpha = random(0.38, 0.88);
@@ -125,7 +128,7 @@ function resetParticle(
     particle.heartTargetIndex = Math.floor(random(0, Math.max(heartTargetCount, 1)));
     particle.targetOffsetX = random(-1.6, 1.6);
     particle.targetOffsetY = random(-1.6, 1.6);
-    assignScatterTarget(particle, width, height);
+    assignReleaseVelocity(particle, width, height);
 }
 
 function createLetterTargets(width: number, height: number) {
@@ -212,103 +215,77 @@ function sampleOpaquePixels(
     return points;
 }
 
-function getFreeAcceleration(particle: Particle, state: FreeMotionState) {
-    let ax = Math.sin((particle.y + state.time * 1.7) * 0.003) * 0.006;
-    let ay = Math.cos((particle.x - state.time * 1.4) * 0.0026) * 0.005;
+function getWaveProfile(particle: Particle, state: FreeMotionState): WaveProfile {
+    const normalizedY = particle.y / Math.max(state.height, 1);
+    const mobileScale = state.isMobile ? 1.22 : 1;
+    const swell = Math.sin(
+        particle.x * 0.0088 * mobileScale -
+        state.time * 0.032 +
+        normalizedY * 5.8 +
+        Math.sin(normalizedY * 8 + state.time * 0.006) * 0.85
+    );
+    const backSwell = Math.sin(
+        particle.x * 0.0056 * mobileScale +
+        particle.y * 0.0105 -
+        state.time * 0.021 +
+        particle.phase
+    );
+    const crossRipple = Math.sin(
+        (particle.x * 0.018 + particle.y * 0.026) * mobileScale -
+        state.time * 0.061 +
+        particle.phase * 0.6
+    );
+    const capillary = Math.sin(
+        particle.x * 0.052 * mobileScale -
+        state.time * 0.135 +
+        particle.y * 0.018 +
+        particle.phase
+    );
+    const windSheen = Math.cos(
+        (particle.x * 0.032 + particle.y * 0.014) * mobileScale -
+        state.time * 0.092 +
+        particle.phase * 1.7
+    );
+    const roll = swell * 0.54 + backSwell * 0.28 + crossRipple * 0.18;
+    const crest = smoothstep((roll + 0.62) / 1.24);
+    const glint = smoothstep((capillary * 0.58 + windSheen * 0.42 + 0.45) / 1.25);
+    const foam = smoothstep((crest * 0.78 + glint * 0.44 + particle.foamBias * 0.34) - 0.64);
+    const lift = Math.sin(
+        particle.x * 0.011 * mobileScale -
+        state.time * 0.038 +
+        normalizedY * 7.2 +
+        particle.phase
+    );
 
-    if (state.mode === 0) {
-        for (const vortex of state.vortices) {
-            const dx = vortex.x - particle.x;
-            const dy = vortex.y - particle.y;
-            const distance = Math.hypot(dx, dy) || 1;
-
-            if (distance < vortex.radius) {
-                const force = (1 - distance / vortex.radius) * vortex.strength;
-                ax += (-dy / distance) * force * 0.047;
-                ay += (dx / distance) * force * 0.047;
-                ax += (dx / distance) * Math.abs(force) * 0.006;
-                ay += (dy / distance) * Math.abs(force) * 0.006;
-            }
-        }
-    }
-
-    if (state.mode === 1) {
-        ax += 0.028 + Math.sin((particle.y + state.time * 2.2) * 0.006) * 0.018;
-        ay += -0.01 + Math.cos((particle.x - state.time * 1.5) * 0.004) * 0.015;
-    }
-
-    if (state.mode === 2) {
-        ax += Math.sin(particle.y * 0.018 + state.time * 0.035) * 0.035;
-        ay += Math.cos(particle.x * 0.01 - state.time * 0.026) * 0.014;
-    }
-
-    if (state.mode === 3) {
-        const dx = state.centerX - particle.x;
-        const dy = state.centerY - particle.y;
-        const distance = Math.hypot(dx, dy) || 1;
-        const force = Math.min(1, distance / Math.max(state.width, state.height)) * 0.055;
-
-        ax += (-dy / distance) * force;
-        ay += (dx / distance) * force;
-        ax += (dx / distance) * 0.005;
-        ay += (dy / distance) * 0.005;
-    }
-
-    if (state.mode === 4) {
-        const dx = particle.x - state.centerX;
-        const distanceFromCenter = Math.abs(dx) / Math.max(state.width * 0.5, 1);
-
-        ax += Math.sin(state.time * 0.025 + particle.y * 0.01) * 0.018;
-        ay += -0.035 + distanceFromCenter * 0.018;
-    }
-
-    if (state.mode === 5) {
-        const dx = particle.x - state.centerX;
-        const dy = particle.y - state.centerY;
-        const distance = Math.hypot(dx, dy) || 1;
-
-        ax += (dx / distance) * 0.018 + Math.cos(state.time * 0.02 + particle.y * 0.006) * 0.014;
-        ay += (dy / distance) * 0.012 + Math.sin(state.time * 0.018 + particle.x * 0.006) * 0.014;
-    }
-
-    if (state.pointer.active) {
-        const dx = state.pointer.x - particle.x;
-        const dy = state.pointer.y - particle.y;
-        const distance = Math.hypot(dx, dy) || 1;
-        const radius = state.width < 640 ? 300 : 360;
-
-        if (distance < radius) {
-            const force = (1 - distance / radius) * particle.affinity;
-            ax += (dx / distance) * force * 0.058;
-            ay += (dy / distance) * force * 0.058;
-            ax += (-dy / distance) * force * 0.01;
-            ay += (dx / distance) * force * 0.01;
-        }
-    }
-
-    return { ax, ay };
+    return { crest, foam, glint, lift, roll };
 }
 
-function blendAcceleration(
-    particle: Particle,
-    baseState: Omit<FreeMotionState, "mode">,
-    previousMode: number,
-    currentMode: number,
-    blend: number
-) {
-    const previous = getFreeAcceleration(particle, { ...baseState, mode: previousMode });
-    const current = getFreeAcceleration(particle, { ...baseState, mode: currentMode });
+function getFreeAcceleration(particle: Particle, state: FreeMotionState, wave: WaveProfile) {
+    const normalizedY = particle.y / Math.max(state.height, 1);
+    const mobileScale = state.isMobile ? 0.86 : 1;
+    const windDrift = 0.009 * particle.layer * mobileScale;
+    const troughDrag = (1 - wave.crest) * 0.006;
 
-    return {
-        ax: previous.ax * (1 - blend) + current.ax * blend,
-        ay: previous.ay * (1 - blend) + current.ay * blend,
-    };
+    const ax =
+        wave.roll * 0.037 * particle.layer * mobileScale +
+        wave.glint * 0.014 +
+        windDrift -
+        troughDrag;
+    const ay =
+        wave.lift * 0.026 * particle.layer * mobileScale -
+        wave.foam * 0.016 +
+        Math.cos(state.time * 0.016 + normalizedY * Math.PI * 3 + particle.phase) * 0.006;
+
+    return { ax, ay };
 }
 
 function drawParticle(
     ctx: CanvasRenderingContext2D,
     particle: Particle,
-    shapeIntensity: number
+    shapeIntensity: number,
+    time: number,
+    wave: WaveProfile,
+    isMobile: boolean
 ) {
     ctx.save();
     ctx.translate(particle.x, particle.y);
@@ -316,14 +293,18 @@ function drawParticle(
 
     const mutedProgress = particle.joinsFormation ? 0 : shapeIntensity;
     const letterProgress = particle.joinsFormation ? shapeIntensity : 0;
-    const saturation = 86 - mutedProgress * 62;
-    const lightness = particle.lightness + mutedProgress * 12 + letterProgress * 3;
-    const alpha = particle.alpha * (1 - mutedProgress * 0.72) + letterProgress * 0.08;
+    const mobileFreeBoost = isMobile ? 1 - shapeIntensity : 0;
+    const shimmer = Math.sin(particle.x * 0.032 + particle.y * 0.018 + time * 0.09 + particle.phase) * 0.5 + 0.5;
+    const waveGlow = wave.foam * 0.82 + wave.glint * 0.28;
+    const saturation = Math.max(22, 82 - wave.foam * 34 - mutedProgress * 62);
+    const lightness = particle.lightness + waveGlow * (24 + mobileFreeBoost * 10) + shimmer * 7 + mutedProgress * 12 + letterProgress * 3;
+    const alpha = particle.alpha * (0.52 + wave.crest * (0.3 + mobileFreeBoost * 0.16) + wave.foam * (0.38 + mobileFreeBoost * 0.24) + shimmer * 0.18) * (1 - mutedProgress * 0.72) + letterProgress * 0.08;
 
     ctx.globalAlpha = Math.min(0.96, alpha);
 
-    const width = particle.size * (1 + letterProgress * 0.1);
-    const height = width * particle.stretch;
+    const mobileScale = isMobile ? 0.78 : 1;
+    const width = particle.size * mobileScale * (0.82 + wave.crest * (0.45 + mobileFreeBoost * 0.2) + wave.foam * (0.65 + mobileFreeBoost * 0.35) + letterProgress * 0.1);
+    const height = width * particle.stretch * (1 + wave.foam * 0.25);
     ctx.fillStyle = `hsla(${particle.hue}, ${saturation}%, ${lightness}%, 0.96)`;
     ctx.beginPath();
     ctx.ellipse(0, 0, width, height, 0, 0, Math.PI * 2);
@@ -353,30 +334,23 @@ export function RosePetalRain({ stage }: RosePetalRainProps) {
         }
 
         const particles: Particle[] = [];
-        const pointer = { active: false, x: 0, y: 0 };
-        const vortices: Vortex[] = [
-            { x: 0, y: 0, radius: 280, strength: 0.52, phase: 0, speed: 0.0026 },
-            { x: 0, y: 0, radius: 380, strength: -0.38, phase: 2.4, speed: 0.0019 },
-            { x: 0, y: 0, radius: 240, strength: 0.3, phase: 4.7, speed: 0.0034 },
-        ];
         const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         let letterTargets: Point[] = [];
         let heartTargets: Point[] = [];
         let width = 0;
         let height = 0;
+        let isMobile = false;
         let dpr = 1;
         let time = 0;
         let visualStage: ParticleStage = "free";
         let transition: Transition = null;
-        let previousFreeMode = 0;
-        let currentFreeMode = 0;
-        let lastModeSwitchTime = performance.now();
         let animationFrame = 0;
 
         const resize = () => {
             dpr = Math.min(window.devicePixelRatio || 1, 2);
             width = window.innerWidth;
             height = window.innerHeight;
+            isMobile = width < 640;
             canvas.width = Math.floor(width * dpr);
             canvas.height = Math.floor(height * dpr);
             canvas.style.width = `${width}px`;
@@ -386,8 +360,8 @@ export function RosePetalRain({ stage }: RosePetalRainProps) {
             heartTargets = createHeartTargets(width, height);
 
             const targetCount = Math.min(
-                width < 640 ? 2300 : 3600,
-                Math.floor((width * height) / (width < 640 ? 210 : 220))
+                isMobile ? 2900 : 3800,
+                Math.floor((width * height) / (isMobile ? 170 : 205))
             );
 
             while (particles.length < targetCount) {
@@ -403,7 +377,7 @@ export function RosePetalRain({ stage }: RosePetalRainProps) {
             for (const particle of particles) {
                 particle.letterTargetIndex = Math.floor(random(0, Math.max(letterTargets.length, 1)));
                 particle.heartTargetIndex = Math.floor(random(0, Math.max(heartTargets.length, 1)));
-                assignScatterTarget(particle, width, height);
+                assignReleaseVelocity(particle, width, height);
             }
         };
 
@@ -412,7 +386,7 @@ export function RosePetalRain({ stage }: RosePetalRainProps) {
 
             if (target === "free") {
                 for (const particle of particles) {
-                    assignScatterTarget(particle, width, height);
+                    assignReleaseVelocity(particle, width, height);
                 }
 
                 transition = { from, kind: "scatter", startedAt: now, target };
@@ -420,28 +394,6 @@ export function RosePetalRain({ stage }: RosePetalRainProps) {
             }
 
             transition = { from, kind: "shape", startedAt: now, target };
-        };
-
-        const updatePointer = (event: PointerEvent) => {
-            pointer.active = true;
-            pointer.x = event.clientX;
-            pointer.y = event.clientY;
-        };
-
-        const updateTouchPointer = (event: TouchEvent) => {
-            const touch = event.touches[0];
-
-            if (!touch) {
-                return;
-            }
-
-            pointer.active = true;
-            pointer.x = touch.clientX;
-            pointer.y = touch.clientY;
-        };
-
-        const clearPointer = () => {
-            pointer.active = false;
         };
 
         const animate = () => {
@@ -452,13 +404,6 @@ export function RosePetalRain({ stage }: RosePetalRainProps) {
                 startTransition(desiredStage, now);
             }
 
-            if (!transition && visualStage === "free" && now - lastModeSwitchTime > FREE_MODE_MS) {
-                previousFreeMode = currentFreeMode;
-                currentFreeMode = (currentFreeMode + 1) % 6;
-                lastModeSwitchTime = now;
-            }
-
-            const modeBlend = smoothstep((now - lastModeSwitchTime) / FREE_MODE_BLEND_MS);
             const transitionProgress = transition
                 ? smoothstep((now - transition.startedAt) / TRANSITION_MS)
                 : visualStage === "free" ? 0 : 1;
@@ -473,40 +418,29 @@ export function RosePetalRain({ stage }: RosePetalRainProps) {
                 : transition?.from === "free" ? transitionProgress : visualStage === "free" ? 0 : 1;
 
             time += reducedMotion ? 0.32 : 1;
-            ctx.fillStyle = `rgba(255, 246, 249, ${0.13 + shapeIntensity * 0.13})`;
+            ctx.fillStyle = `rgba(255, 246, 249, ${isMobile ? 0.145 + shapeIntensity * 0.135 : 0.11 + shapeIntensity * 0.12})`;
             ctx.fillRect(0, 0, width, height);
 
-            const centerX = width * 0.5;
-            const centerY = height * 0.5;
-
-            for (const vortex of vortices) {
-                vortex.phase += vortex.speed * (reducedMotion ? 0.35 : 1);
-                vortex.x = centerX + Math.cos(vortex.phase) * width * 0.27;
-                vortex.y = centerY + Math.sin(vortex.phase * 1.18) * height * 0.25;
-            }
-
             for (const particle of particles) {
-                const freeAcceleration = blendAcceleration(
-                    particle,
-                    { centerX, centerY, height, pointer, time, vortices, width },
-                    previousFreeMode,
-                    currentFreeMode,
-                    modeBlend
-                );
+                const wave = getWaveProfile(particle, { height, isMobile, time, width });
+                const freeAcceleration = getFreeAcceleration(particle, { height, isMobile, time, width }, wave);
+                const freeAmount = 1 - shapeIntensity;
+                const mobileFreeBoost = isMobile ? freeAmount : 0;
                 let ax = particle.joinsFormation
-                    ? freeAcceleration.ax * (1 - shapeIntensity)
+                    ? freeAcceleration.ax * freeAmount
                     : freeAcceleration.ax * 0.72;
                 let ay = particle.joinsFormation
-                    ? freeAcceleration.ay * (1 - shapeIntensity)
+                    ? freeAcceleration.ay * freeAmount
                     : freeAcceleration.ay * 0.72;
 
-                if (transition?.kind === "scatter" && particle.joinsFormation) {
-                    const dx = particle.scatterX - particle.x;
-                    const dy = particle.scatterY - particle.y;
-                    const pull = 0.00012 + transitionProgress * 0.00072;
+                ax *= 1 + mobileFreeBoost * 0.68;
+                ay *= 1 + mobileFreeBoost * 0.92;
 
-                    ax += dx * pull;
-                    ay += dy * pull;
+                if (transition?.kind === "scatter" && particle.joinsFormation) {
+                    const release = Math.sin(transitionProgress * Math.PI);
+
+                    ax += particle.releaseVx * release;
+                    ay += particle.releaseVy * release;
                     ax += freeAcceleration.ax * transitionProgress * 0.62;
                     ay += freeAcceleration.ay * transitionProgress * 0.62;
                 }
@@ -543,7 +477,7 @@ export function RosePetalRain({ stage }: RosePetalRainProps) {
                 particle.y += particle.vy * (reducedMotion ? 0.42 : 1);
                 particle.angle += particle.spin + particle.vx * 0.02;
 
-                if (shapeIntensity < 0.02 && (
+                if (!transition && shapeIntensity < 0.02 && (
                     particle.x < -30 ||
                     particle.x > width + 30 ||
                     particle.y < -30 ||
@@ -553,7 +487,7 @@ export function RosePetalRain({ stage }: RosePetalRainProps) {
                     resetParticle(particle, width, height, letterTargets.length, heartTargets.length);
                 }
 
-                drawParticle(ctx, particle, shapeIntensity);
+                drawParticle(ctx, particle, shapeIntensity, time, wave, isMobile);
             }
 
             animationFrame = window.requestAnimationFrame(animate);
@@ -565,28 +499,12 @@ export function RosePetalRain({ stage }: RosePetalRainProps) {
         animate();
 
         window.addEventListener("resize", resize);
-        window.addEventListener("pointermove", updatePointer, { passive: true });
-        window.addEventListener("pointerdown", updatePointer, { passive: true });
-        window.addEventListener("touchstart", updateTouchPointer, { passive: true });
-        window.addEventListener("touchmove", updateTouchPointer, { passive: true });
-        window.addEventListener("pointerup", clearPointer);
-        window.addEventListener("pointerleave", clearPointer);
-        window.addEventListener("touchend", clearPointer);
-        window.addEventListener("touchcancel", clearPointer);
 
         return () => {
             window.cancelAnimationFrame(animationFrame);
             window.removeEventListener("resize", resize);
-            window.removeEventListener("pointermove", updatePointer);
-            window.removeEventListener("pointerdown", updatePointer);
-            window.removeEventListener("touchstart", updateTouchPointer);
-            window.removeEventListener("touchmove", updateTouchPointer);
-            window.removeEventListener("pointerup", clearPointer);
-            window.removeEventListener("pointerleave", clearPointer);
-            window.removeEventListener("touchend", clearPointer);
-            window.removeEventListener("touchcancel", clearPointer);
         };
     }, []);
 
-    return <canvas ref={canvasRef} aria-hidden="true" className="fixed inset-0 z-10 touch-none" />;
+    return <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none fixed inset-0 z-10" />;
 }
