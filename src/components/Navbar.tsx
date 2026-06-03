@@ -15,6 +15,10 @@ const navItems = [
 export function Navbar() {
     const pathname = usePathname()
 
+    if (pathname.startsWith("/surprise")) {
+        return null
+    }
+
     return (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-fit pointer-events-none px-4">
             <nav className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/10 bg-black/20 p-1 backdrop-blur-md shadow-lg overflow-x-auto max-w-[calc(100vw-2rem)] scrollbar-hide">
